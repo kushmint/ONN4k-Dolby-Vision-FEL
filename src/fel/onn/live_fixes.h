@@ -3,7 +3,7 @@
  * reviewed open-driver changes. Never replace the proprietary Dolby module.
  * Only alter calls in our session.
  *
- * Ported from signde's Fire TV Cube 3 (SC2/PS7702, kernel 5.4.125) module.
+ * Ported from signde's Fire TV Cube 3 (SC2/PS7702, kernel 5.4.125) port of djnice's dvfel.
  * Firmware-specific offsets live in fw_profiles[] (one per supported build);
  * an unknown build refuses to load.
  */

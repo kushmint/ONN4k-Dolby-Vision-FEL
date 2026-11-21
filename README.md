@@ -9,8 +9,8 @@ Dolby Vision tone-mapped picture too.
 Everything runs in memory. Nothing on the box's partitions is changed: uninstall the module and
 reboot, and the box is stock again.
 
-**Latest release: 2026.11.20.15**:
-[download `onn-dvfel-magisk-2026.11.20.15.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.15/onn-dvfel-magisk-2026.11.20.15.zip)
+**Latest release: 2026.11.20.16**:
+[download `onn-dvfel-magisk-2026.11.20.16.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip)
 · [all releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases) · [install guide](#install)
 · FEL players: [ONN4k-FEL-Players](https://github.com/kushmint/ONN4k-FEL-Players)
 
@@ -55,7 +55,7 @@ Check your firmware build: **Settings → System → About → Android TV OS bui
 
 ### 1. Download the zip
 
-**[onn-dvfel-magisk-2026.11.20.15.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.15/onn-dvfel-magisk-2026.11.20.15.zip)**
+**[onn-dvfel-magisk-2026.11.20.16.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip)**
 (newer versions: [Releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases)).
 
 It's a standard Magisk module zip (about 85 KB). Don't unzip it; Magisk installs it as is. Inside:
@@ -94,17 +94,17 @@ On the computer ([platform-tools](https://developer.android.com/tools/releases/p
 
 ```sh
 # download the zip (or use the link above in a browser)
-curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.15/onn-dvfel-magisk-2026.11.20.15.zip
+curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip
 
 adb connect <box-ip>:5555        # on the TV: tick "Always allow from this computer", then Allow
-adb push onn-dvfel-magisk-2026.11.20.15.zip /sdcard/Download/
+adb push onn-dvfel-magisk-2026.11.20.16.zip /sdcard/Download/
 ```
 
 Then either install it from the **Magisk** app (**Modules → Install from storage → Downloads**), or
 straight from the command line:
 
 ```sh
-adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.20.15.zip'"
+adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.20.16.zip'"
 adb reboot
 ```
 
@@ -133,7 +133,7 @@ right for almost everyone. Press **Apply** if you change anything; the status pa
 
 ## Tested
 
-Release 2026.11.20.15 on both supported firmware builds, with a real P7 FEL movie and the
+Release 2026.11.20.15 (same module code as 2026.11.20.16, which only adds the djnice credit) on both supported firmware builds, with a real P7 FEL movie and the
 "DV FEL All Layers Test" clip. "Lost" counts frames the display dropped during 30 s of normal
 playback (seeks excluded).
 
@@ -173,9 +173,24 @@ case; see [Known issues](#known-issues).)
 ## The settings app
 
 The app needs no root grant: it hands your choice to the module's root service, which checks it
-and applies it within a second or two.
+and applies it within a second or two. Open it from the apps row: **Dolby Vision FEL**.
 
-![Settings app](docs/settings-app.png)
+**On a Dolby Vision TV** (Automatic → display-led; the box idles in bypass until a FEL video plays):
+
+![Settings app on a Dolby Vision TV: Automatic selected, status shows Display DV yes, HDMI 2160p60hz 444 8bit, DV Engine BYPASS](docs/app-displayled-idle.png)
+
+**On an HDR10 TV without Dolby Vision** (LLDV at 578 nits: the whole box runs as HDR10 4:2:2 12-bit):
+
+![Settings app on an HDR10 TV: LLDV selected at 578 nits, status shows Current Mode LLDV, HDMI 2160p60hz 422 12bit, Signal HDR10, DV Engine IPT_TUNNEL](docs/app-lldv.png)
+
+**Advanced: HDR10 metadata for LLDV** opened (choices A, B and C below the checkbox):
+
+![Settings app with the Advanced HDR10 metadata options shown](docs/app-advanced.png)
+
+**The badge:** with *Show a badge when FEL playback starts* on, this appears for a few seconds when
+a FEL video starts (screenshots can't capture the video plane, so the movie shows as black here):
+
+![FEL badge at the bottom of the screen reading "Dolby Vision FEL · display-led"](docs/badge-display-led.png)
 
 ### Controls
 
@@ -243,6 +258,8 @@ Log: `/data/adb/onn_dvfel/log.txt`. Driver counters: `/sys/kernel/debug/dvfel/st
 
 ## How it works
 
+![Diagram: the FEL player decodes the base layer with the Dolby Vision decoder and the enhancement layer with a second HEVC decoder. Base-layer frames go through the normal Android video path; enhancement-layer frames go to dvfel.ko through /dev/dvfel. dvfel pairs each base-layer frame with its enhancement layer and the SoC's Dolby Vision core composes both, then sends display-led Dolby Vision to a Dolby Vision TV or LLDV as HDR10 to an HDR10 TV. The settings app controls the output through dvfelctl.](docs/how-it-works.svg)
+
 1. The player decodes the base layer with the normal Dolby Vision decoder and the enhancement
    layer with a second HEVC decoder, then queues each EL frame with its RPU checksum on `/dev/dvfel`.
 2. The module registers as a video provider (`dveldec`) and uses kprobes on the box's own
@@ -298,6 +315,10 @@ bash magisk/build_module.sh            # dist/onn-dvfel-magisk-<version>.zip
 detail. Host scripts take the box address from `ONN_BOX=<ip>:5555`.
 
 ## Credits and license
+
+**Huge thanks to [djnice](https://github.com/djnice).** FEL on Android TV boxes starts with his
+work: the kernel module design, the FEL player and the library every one of these players runs on.
+This project wouldn't exist without it.
 
 - **[djnice](https://github.com/djnice)**: the original Android FEL work this all builds on: the `dvfel`
   kernel module design (written for the Dune HD S905X4: `dveldec` provider, base/enhancement-layer

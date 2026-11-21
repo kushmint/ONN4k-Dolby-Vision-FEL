@@ -4,7 +4,9 @@
  * Amlogic S905X5M (S7D) on Android TV 14 firmwares with the 5.15.196 kernel
  * (ONN 4K Pro v2, codename jarvis2).
  *
- * Ported from signde's Fire TV Cube 3 (SC2/PS7702) module:
+ * Based on djnice's dvfel for the Dune HD S905X4 (the dveldec provider, pairing by
+ * RPU CRC and composition by the Dolby Vision core; https://github.com/djnice),
+ * as ported by signde to the Fire TV Cube 3 (SC2/PS7702):
  *   https://github.com/signde/firetv-passthrough
  *
  * The SoC composes BL + EL itself when the Dolby Vision driver gets the EL
@@ -1266,6 +1268,6 @@ static void __exit dvfel_exit(void)
 module_init(dvfel_init);
 module_exit(dvfel_exit);
 MODULE_DESCRIPTION("Dolby Vision FEL by the Dolby Vision core of Amlogic S7D (ONN 4K Pro v2)");
-MODULE_AUTHOR("signde, kushmint");
+MODULE_AUTHOR("djnice, signde, kushmint");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DVFEL_SC2_VERSION);

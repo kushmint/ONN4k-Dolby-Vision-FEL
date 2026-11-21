@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" font-family="Helvetica, Arial, sans-serif">
+  <title>How onn 4K Pro Dolby Vision FEL works</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="560" fill="#ffffff"/>
+
+  <!-- lanes -->
+  <text x="20" y="34" font-size="13" fill="#64748b" font-weight="bold">APP (no root)</text>
+  <text x="20" y="214" font-size="13" fill="#64748b" font-weight="bold">KERNEL (this module + the box's own drivers)</text>
+  <text x="20" y="444" font-size="13" fill="#64748b" font-weight="bold">OUTPUT</text>
+  <line x1="20" y1="196" x2="980" y2="196" stroke="#e2e8f0" stroke-width="2"/>
+  <line x1="20" y1="426" x2="980" y2="426" stroke="#e2e8f0" stroke-width="2"/>
+
+  <!-- file -->
+  <rect x="20" y="50" width="170" height="120" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="105" y="80" font-size="15" text-anchor="middle" font-weight="bold" fill="#0f172a">P7 FEL movie</text>
+  <text x="105" y="104" font-size="13" text-anchor="middle" fill="#334155">base layer (4K)</text>
+  <text x="105" y="124" font-size="13" text-anchor="middle" fill="#334155">enhancement layer</text>
+  <text x="105" y="144" font-size="13" text-anchor="middle" fill="#334155">RPU metadata</text>
+
+  <!-- player -->
+  <rect x="240" y="50" width="330" height="120" rx="10" fill="#eff6ff" stroke="#3b82f6"/>
+  <text x="405" y="76" font-size="15" text-anchor="middle" font-weight="bold" fill="#0f172a">VLC FEL / Kodi FEL (libdvfelplay)</text>
+  <rect x="256" y="92" width="145" height="62" rx="6" fill="#ffffff" stroke="#93c5fd"/>
+  <text x="328" y="116" font-size="13" text-anchor="middle" fill="#1e3a8a">BL decoder</text>
+  <text x="328" y="136" font-size="12" text-anchor="middle" fill="#475569">Dolby Vision MediaCodec</text>
+  <rect x="410" y="92" width="145" height="62" rx="6" fill="#ffffff" stroke="#fdba74"/>
+  <text x="482" y="116" font-size="13" text-anchor="middle" fill="#9a3412">EL decoder</text>
+  <text x="482" y="136" font-size="12" text-anchor="middle" fill="#475569">2nd HEVC decoder</text>
+  <line x1="190" y1="110" x2="238" y2="110" stroke="#475569" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- settings app -->
+  <rect x="790" y="50" width="190" height="120" rx="10" fill="#fefce8" stroke="#ca8a04"/>
+  <text x="885" y="80" font-size="15" text-anchor="middle" font-weight="bold" fill="#0f172a">Settings app</text>
+  <text x="885" y="104" font-size="13" text-anchor="middle" fill="#334155">output mode,</text>
+  <text x="885" y="124" font-size="13" text-anchor="middle" fill="#334155">LLDV nits, badge</text>
+  <text x="885" y="148" font-size="12" text-anchor="middle" fill="#64748b">→ dvfelctl (root)</text>
+
+  <!-- BL path -->
+  <rect x="240" y="236" width="230" height="80" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="355" y="264" font-size="14" text-anchor="middle" font-weight="bold" fill="#0f172a">Android video path</text>
+  <text x="355" y="286" font-size="12" text-anchor="middle" fill="#475569">SurfaceFlinger → video composer</text>
+  <text x="355" y="304" font-size="12" text-anchor="middle" fill="#475569">(GL-early offset 4 ms at boot)</text>
+  <line x1="328" y1="154" x2="328" y2="234" stroke="#475569" stroke-width="2" marker-end="url(#a)"/>
+  <text x="336" y="200" font-size="12" fill="#475569">BL frames</text>
+
+  <!-- dvfel -->
+  <rect x="510" y="236" width="270" height="170" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="645" y="262" font-size="15" text-anchor="middle" font-weight="bold" fill="#0f172a">dvfel.ko (this module)</text>
+  <text x="645" y="286" font-size="12" text-anchor="middle" fill="#334155">/dev/dvfel: EL frames + RPU checksum</text>
+  <text x="645" y="306" font-size="12" text-anchor="middle" fill="#334155">"dveldec" EL provider</text>
+  <text x="645" y="326" font-size="12" text-anchor="middle" fill="#334155">pairs each BL frame with its EL</text>
+  <text x="645" y="346" font-size="12" text-anchor="middle" fill="#334155">(timestamp + RPU checksum)</text>
+  <text x="645" y="366" font-size="12" text-anchor="middle" fill="#334155">kprobes keep the composer in FEL mode</text>
+  <text x="645" y="386" font-size="12" text-anchor="middle" fill="#334155">LLDV: forced sink, 4:2:2 12-bit, HDR10</text>
+  <line x1="482" y1="154" x2="600" y2="234" stroke="#c2410c" stroke-width="2" marker-end="url(#b)"/>
+  <text x="552" y="200" font-size="12" fill="#c2410c">EL frames</text>
+
+  <!-- DV core -->
+  <rect x="240" y="336" width="230" height="70" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="355" y="364" font-size="14" text-anchor="middle" font-weight="bold" fill="#0f172a">Dolby Vision core (SoC)</text>
+  <text x="355" y="386" font-size="12" text-anchor="middle" fill="#475569">composes BL + EL in hardware</text>
+  <line x1="355" y1="316" x2="355" y2="334" stroke="#475569" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="508" y1="372" x2="472" y2="372" stroke="#c2410c" stroke-width="2" marker-end="url(#b)"/>
+  <text x="490" y="392" font-size="11" text-anchor="middle" fill="#c2410c">paired</text>
+
+  <!-- settings to kernel -->
+  <line x1="885" y1="170" x2="885" y2="320" stroke="#ca8a04" stroke-width="2" stroke-dasharray="6 4"/>
+  <line x1="885" y1="320" x2="782" y2="320" stroke="#ca8a04" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+
+  <!-- outputs -->
+  <rect x="140" y="458" width="330" height="80" rx="10" fill="#f5f3ff" stroke="#8b5cf6"/>
+  <text x="305" y="486" font-size="14" text-anchor="middle" font-weight="bold" fill="#0f172a">Dolby Vision TV: display-led</text>
+  <text x="305" y="508" font-size="12" text-anchor="middle" fill="#475569">real Dolby Vision signal,</text>
+  <text x="305" y="526" font-size="12" text-anchor="middle" fill="#475569">the TV tone-maps</text>
+  <rect x="530" y="458" width="330" height="80" rx="10" fill="#f5f3ff" stroke="#8b5cf6"/>
+  <text x="695" y="486" font-size="14" text-anchor="middle" font-weight="bold" fill="#0f172a">HDR10 TV: LLDV</text>
+  <text x="695" y="508" font-size="12" text-anchor="middle" fill="#475569">tone-mapped on the box to your nits target,</text>
+  <text x="695" y="526" font-size="12" text-anchor="middle" fill="#475569">sent as HDR10 4:2:2 12-bit</text>
+  <line x1="330" y1="406" x2="305" y2="456" stroke="#475569" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="380" y1="406" x2="660" y2="456" stroke="#475569" stroke-width="2" marker-end="url(#a)"/>
+  <text x="980" y="444" font-size="12" text-anchor="end" fill="#475569">HDMI: Automatic picks one of the two</text>
+</svg>
