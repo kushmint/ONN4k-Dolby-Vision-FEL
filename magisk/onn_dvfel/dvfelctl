@@ -1,0 +1,212 @@
+#!/system/bin/sh
+# Control script for the onn 4K Pro Dolby Vision FEL module. Runs as root.
+# Usage: dvfelctl get | set KEY=VALUE... | apply | status | monitor
+#
+# The chosen output is "desired". With WHEN=always (default) LLDV stays on; with
+# WHEN=playback it is switched on per FEL session, but FEL then fails to compose
+# (the video path is set up at video start while the engine is still off).
+MODDIR=/data/adb/modules/onn_dvfel
+DATA=/data/adb/onn_dvfel
+CONF=$DATA/settings.conf
+APP=org.dvfel.settings
+APPDIR=/data/data/$APP/files
+P=/sys/module/aml_media/parameters
+H=/sys/class/amhdmitx/amhdmitx0
+M=/sys/module/dvfel/parameters
+LS=$MODDIR/lldv_setup.sh
+OFF_DELAY=6
+
+MODE=auto; NITS=499; META=A; BADGE=1; WHEN=always
+load() { [ -f $CONF ] && . $CONF; }
+log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
+
+asleep() { [ "$(cat /sys/class/display/mode)" = dummy_l ]; }
+loaded() { [ -e $M/lldv_hdr10 ]; }
+# The real EDID: a Dolby Vision VSVDB is extended tag 1 with the Dolby OUI 00-D0-46.
+display_dv() { tr -d ' \r\n' < $H/rawedid | grep -qiE 'e[0-9a-f]0146d000'; }
+display_lldv_ok() { grep -qx 422,12bit $H/dc_cap && grep -q 'SMPTE ST 2084: 1' $H/hdr_cap; }
+lldv_active() { [ "$(cat $M/lldv_force_422 2>/dev/null)" = Y ] && [ "$(cat $P/force_vsvdb)" != 0 ]; }
+in_session() { [ "$(grep -c '^fixes session 1' /sys/kernel/debug/dvfel/stats 2>/dev/null)" = 1 ]; }
+link() { tr -d '\r' < $H/hdmitx_basic_config | grep -i '^attr out:' | cut -d: -f2; }
+
+target() {
+  case "$MODE" in
+    auto)
+      if display_dv; then echo displayled
+      elif display_lldv_ok; then echo lldv
+      else echo off; fi;;
+    lldv) if display_lldv_ok; then echo lldv; else echo off; fi;;
+    *) echo "$MODE";;
+  esac
+}
+
+set_meta() {
+  case "$META" in
+    B) echo 1 > $M/lldv_meta; echo 0 > $M/lldv_limit_nits;;
+    C) echo 1 > $M/lldv_meta; echo "$NITS" > $M/lldv_limit_nits;;
+    *) echo 0 > $M/lldv_meta; echo 0 > $M/lldv_limit_nits;;
+  esac
+}
+
+# Change only the peak while LLDV is already running: new VSVDB, no link change.
+set_nits() {
+  case "$NITS" in
+    320) STEP=8;; 372) STEP=9;; 499) STEP=11;; 578) STEP=12;; 775) STEP=14;; 1037) STEP=16;;
+    *) return 1;;
+  esac
+  echo 235,1,70,208,0,69,11,$((STEP << 3)),134,96,118,143 > $P/vsvdb_data
+  X=$(tr -d ' \r\n' < $H/rawedid)
+  echo "load $X" > $H/edid
+  sleep 1
+  echo Y > $P/dolby_vision_enable; echo 0 > $P/dolby_vision_policy
+  echo "$NITS" > $M/lldv_peak_nits
+}
+
+# Playback output for the desired mode.
+session_on() {
+  load
+  D=$(cat $DATA/desired 2>/dev/null)
+  case "$D" in
+    lldv)
+      if lldv_active; then
+        [ "$(cat $M/lldv_peak_nits)" = "$NITS" ] || set_nits
+      elif ! EARLY=1 sh $LS "$NITS"; then
+        log "session: LLDV setup failed, playing the HDR10 base layer"; D=off
+        sh $LS engine_off 1
+      fi
+      [ "$D" = lldv ] && set_meta;;
+    off) sh $LS engine_off 1;;
+  esac
+  echo "$D" > $DATA/active
+  log "session on: $D nits=$NITS meta=$META link=$(link)"
+}
+
+# Back to the stock home screen output.
+# "restoring" first, so the monitor stops putting the engine back on for LLDV
+# while the restore's mode changes run.
+session_off() {
+  echo restoring > $DATA/active
+  lldv_active && sh $LS restore >/dev/null
+  if [ "$(cat $DATA/enable_boot 2>/dev/null)" = Y ]; then echo Y > $P/dolby_vision_enable
+  else sh $LS engine_off 1; fi
+  echo idle > $DATA/active
+  log "session off: link=$(link)"
+}
+
+apply() {
+  load
+  loaded || { log "apply: dvfel is not loaded"; return 1; }
+  if asleep; then log "apply: display asleep, will apply on wake"; return 0; fi
+  T=$(target)
+  echo "$T" > $DATA/desired
+  if in_session || { [ "$WHEN" = always ] && [ "$T" = lldv ]; }; then session_on; else session_off; fi
+  log "apply: mode=$MODE desired=$T nits=$NITS meta=$META"
+}
+
+status() {
+  load
+  echo "loaded=$(loaded && echo 1 || echo 0)"
+  echo "version=$(cat /sys/module/dvfel/version 2>/dev/null)"
+  echo "firmware=$(getprop ro.build.version.incremental)"
+  echo "MODE=$MODE"; echo "NITS=$NITS"; echo "META=$META"; echo "BADGE=$BADGE"; echo "WHEN=$WHEN"
+  echo "desired=$(cat $DATA/desired 2>/dev/null)"
+  echo "active=$(cat $DATA/active 2>/dev/null)"
+  echo "asleep=$(asleep && echo 1 || echo 0)"
+  echo "display_dv=$(display_dv && echo 1 || echo 0)"
+  echo "display_lldv=$(display_lldv_ok && echo 1 || echo 0)"
+  echo "output=$(cat /sys/class/display/mode)"
+  echo "link=$(link)"
+  echo "hdr=$(cat $H/hdmi_hdr_status)"
+  echo "dv=$(tail -1 /sys/class/amdolby_vision/dv_mode | sed 's/current dv_mode = //')"
+  echo "fel=$(in_session && echo 1 || echo 0)"
+}
+
+# Values are checked against fixed lists, so nothing from the app is ever executed.
+set_keys() {
+  load
+  for kv in "$@"; do
+    k=${kv%%=*}; v=${kv#*=}
+    case "$k=$v" in
+      MODE=auto|MODE=displayled|MODE=lldv|MODE=off) MODE=$v;;
+      NITS=320|NITS=372|NITS=499|NITS=578|NITS=775|NITS=1037) NITS=$v;;
+      META=A|META=B|META=C) META=$v;;
+      BADGE=0|BADGE=1) BADGE=$v;;
+      WHEN=playback|WHEN=always) WHEN=$v;;
+      *) echo "invalid $kv"; return 2;;
+    esac
+  done
+  mkdir -p $DATA
+  printf 'MODE=%s\nNITS=%s\nMETA=%s\nBADGE=%s\nWHEN=%s\n' "$MODE" "$NITS" "$META" "$BADGE" "$WHEN" > $CONF.tmp && mv $CONF.tmp $CONF
+}
+
+badge() {
+  load
+  [ "$BADGE" = 1 ] || return 0
+  case "$(cat $DATA/active 2>/dev/null)" in
+    lldv) T="Dolby Vision FEL  ·  LLDV $NITS nits  ·  sent as HDR10";;
+    displayled) T="Dolby Vision FEL  ·  display-led";;
+    *) T="FEL video  ·  Dolby Vision processing off (HDR10 base layer)";;
+  esac
+  am broadcast -f 32 -a $APP.BADGE -n $APP/.BadgeReceiver --es text "$T" >/dev/null 2>&1
+}
+
+# The app has no root: it writes request.conf in its own files folder and reads
+# status.txt, which this script writes there with the app's owner and label.
+app_request() {
+  [ -f $APPDIR/request.conf ] || return 0
+  req=$(grep -m1 '^REQ=[0-9]*$' $APPDIR/request.conf | cut -d= -f2)
+  [ -n "$req" ] && [ "$req" != "$(cat $DATA/last_req 2>/dev/null)" ] || return 0
+  echo "$req" > $DATA/last_req
+  args=$(grep -E '^(MODE|NITS|META|BADGE|WHEN)=[a-z0-9A-Z]+$' $APPDIR/request.conf | tr '\n' ' ')
+  # shellcheck disable=SC2086
+  if set_keys $args; then apply; else log "app: rejected request"; fi
+  app_status "$req" force
+}
+
+app_status() {
+  [ -d $APPDIR ] || return 0
+  { status; echo "req=${1:-$(cat $DATA/last_req 2>/dev/null)}"; } > $DATA/status.new
+  [ "$2" = force ] || ! cmp -s $DATA/status.new $DATA/status.app || return 0
+  cp $DATA/status.new $DATA/status.app
+  cp $DATA/status.new $APPDIR/status.tmp
+  chown "$(stat -c %u:%g $APPDIR)" $APPDIR/status.tmp
+  chcon "$(ls -Zd $APPDIR | awk '{print $1}')" $APPDIR/status.tmp 2>/dev/null
+  chmod 600 $APPDIR/status.tmp
+  mv $APPDIR/status.tmp $APPDIR/status.txt
+}
+
+monitor() {
+  was_asleep=0; was_fel=0; off_count=0
+  while true; do
+    sleep 1
+    loaded || continue
+    app_request
+    load
+    if asleep; then was_asleep=1; continue; fi
+    if [ $was_asleep = 1 ]; then was_asleep=0; sleep 4; apply; fi
+    if in_session; then fel=1; else fel=0; fi
+    if [ $fel = 1 ] && [ $was_fel = 0 ]; then
+      off_count=0; session_on; badge
+    elif [ $fel = 0 ] && [ "$WHEN" != always ] && [ "$(cat $DATA/active 2>/dev/null)" != idle ]; then
+      off_count=$((off_count + 1))
+      [ $off_count -ge $OFF_DELAY ] && session_off
+    fi
+    [ $fel = 1 ] && off_count=0
+    if [ "$(cat $DATA/active 2>/dev/null)" = lldv ]; then
+      # Display mode changes can switch the Dolby Vision engine off or force SDR.
+      [ "$(cat $P/dolby_vision_enable)" = Y ] || { echo Y > $P/dolby_vision_enable; log "monitor: engine back on"; }
+      [ "$(cat $P/dolby_vision_policy)" = 0 ] || { echo 0 > $P/dolby_vision_policy; log "monitor: policy back to 0"; }
+    fi
+    was_fel=$fel
+    app_status
+  done
+}
+
+case "$1" in
+  get) load; printf 'MODE=%s\nNITS=%s\nMETA=%s\nBADGE=%s\nWHEN=%s\n' "$MODE" "$NITS" "$META" "$BADGE" "$WHEN";;
+  set) shift; set_keys "$@";;
+  apply) apply;;
+  status) status;;
+  monitor) monitor;;
+  *) echo "usage: dvfelctl get | set KEY=VALUE... | apply | status | monitor"; exit 2;;
+esac

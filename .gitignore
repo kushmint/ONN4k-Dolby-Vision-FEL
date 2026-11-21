@@ -1,0 +1,16 @@
+# Large or proprietary trees kept out of git
+/kernel/*
+!/kernel/tools/
+/kernel/tools/*.o
+/firmware/
+/test-media/
+/tests/logs/
+/player/build/
+/player/sdk/
+# vlc-fel-android moved to ../ONN4k-FEL-Players
+/player/debug.keystore
+# Generated at build time
+/player/settings-app/res/drawable/*.png
+/magisk/onn_dvfel/dvfel.ko
+/magisk/onn_dvfel/lldv_setup.sh
+/magisk/onn_dvfel/system/app/DvfelSettings/*.apk

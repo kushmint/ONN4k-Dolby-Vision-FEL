@@ -1,0 +1,12 @@
+# Applied by Magisk in memory early in boot, before SurfaceFlinger starts.
+#
+# SurfaceFlinger's "GL early" phase offset, used when a client-composed layer is on screen
+# (Kodi's GUI; on this box the whole UI is GPU-composed). The vendor value of 1 ms woke
+# SurfaceFlinger before the present fence of a FEL frame had signalled (2-4.5 ms after vsync),
+# so at 24 Hz it skipped a vsync and dropped one of the two video buffers then due: Kodi FEL at
+# 2160p24 lost 7-10 frames per second. 4 ms (the vendor's own normal SF offset,
+# ro.surface_flinger.vsync_sf_event_phase_offset_ns): ~0.15 per second, and the smallest UI
+# cost that fixes it (8-12 ms cost missed frames on app launches and launcher scrolling).
+# Measured by the players session on the CA box, 2026-11-20. Kodi FEL (players' patch) only
+# switches to 24 Hz for FEL when this is >= 4000000.
+debug.sf.early_gl_phase_offset_ns=4000000
