@@ -1,6 +1,6 @@
 id=onn_dvfel
 name=onn 4K Pro Dolby Vision FEL
-version=2026.11.20.16
-versionCode=2026112016
+version=2026.11.26.10
+versionCode=2026112610
 author=kushmint (based on djnice's and signde's FEL work)
 description=Dolby Vision profile 7 FEL composition for the ONN 4K Pro v2 (S905X5M). LLDV output as HDR10 for displays without Dolby Vision. In-memory only; nothing on the device partitions is changed.

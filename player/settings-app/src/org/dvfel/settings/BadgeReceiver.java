@@ -23,10 +23,10 @@ public class BadgeReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String text = intent.getStringExtra("text");
-        if (text == null || text.isEmpty()) text = "Dolby Vision FEL";
+        if (text == null || text.isEmpty()) text = "Dolby Vision";
         Context app = context.getApplicationContext();
         if (!Settings.canDrawOverlays(app)) {
-            Toast.makeText(app, text, Toast.LENGTH_LONG).show();
+            longToast(app, text, goAsync());
             return;
         }
         final PendingResult pending = goAsync();
@@ -54,13 +54,20 @@ public class BadgeReceiver extends BroadcastReceiver {
         try {
             wm.addView(badge, lp);
         } catch (Exception e) {
-            Toast.makeText(app, text, Toast.LENGTH_LONG).show();
-            pending.finish();
+            longToast(app, text, pending);
             return;
         }
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             try { wm.removeView(badge); } catch (Exception ignored) { }
             pending.finish();
-        }, 6000);
+        }, SHOW_MS);
+    }
+
+    /** On screen this long: a refresh rate switch at the start of a play blanks the first seconds. */
+    private static final int SHOW_MS = 8000;
+    /** One LENGTH_LONG toast (3.5 s): a second queued toast flashed on the TV. */
+    private static void longToast(Context app, String text, final PendingResult pending) {
+        Toast.makeText(app, text, Toast.LENGTH_LONG).show();
+        pending.finish();
     }
 }

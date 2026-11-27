@@ -27,14 +27,33 @@ grep -q 'module_layout' "$B/dvfel-deps.symvers" ||
 cp "$P"/src/fel/onn/* "$B/"
 touch "$B/dvfel_s7d.c"
 "${M[@]}" M="$B" "KBUILD_EXTRA_SYMBOLS=$B/dvfel-deps.symvers" modules > "$B/build.log" 2>&1
-echo "strict build exit: $?"
+rc=$?
+echo "strict build exit: $rc"
+if [ $rc -ne 0 ]; then grep -E 'error:' "$B/build.log" | cut -c1-200 | head; echo "ERROR: build failed, dist/ left unchanged"; exit 1; fi
 grep -E 'error:|undefined!' "$B/build.log" | cut -c1-150 | head
 python3 -I "$ROOT/tools/verify_versions.py" "$B/dvfel.ko" "$B/dvfel-deps.symvers"
 echo "verify exit: $?"
+# Every symbol the module needs must be exported to modules on the box: GKI (android/abi_gki_aarch64*)
+# or aml_media. modpost can't tell (the KMI list is not in our symvers); the box then refuses the module.
+U=$(llvm-nm -u "$B/dvfel.ko" | awk '{print $2}' | sort -u)
+missing=""
+for s in $U; do
+  grep -q -w -- "$s" "$B/dvfel-deps.symvers" && continue
+  grep -q -r -w -- "$s" "$ROOT"/common/android/abi_gki_aarch64* 2>/dev/null && continue
+  llvm-nm --defined-only "$P/firmware/aml_media.ko" 2>/dev/null | grep -q -w -- "$s" && continue
+  missing="$missing $s"
+done
+if [ -n "$missing" ]; then echo "ERROR: not exported on the box (GKI/aml_media):$missing"; exit 1; fi
+echo "symbol export check: ok"
 mkdir -p "$P/dist"
 # Debug info carries build paths; dist/ gets a stripped copy (kernel/build keeps the full one).
 llvm-strip --strip-debug -o "$P/dist/dvfel.ko" "$B/dvfel.ko"
 strings -a "$P/dist/dvfel.ko" | grep -E '^(vermagic|depends)='
 llvm-nm "$P/dist/dvfel.ko" | grep -E ' __cfi_check$'
 ls -la "$P/dist/dvfel.ko"
+# Keep every build: dist/builds/dvfel-<version>.ko (a later build never overwrites it).
+V=$(sed -n 's/^#define DVFEL_SC2_VERSION[[:space:]]*"\(.*\)"/\1/p' "$P/src/fel/onn/dvfel_s7d_uapi.h")
+mkdir -p "$P/dist/builds"
+cp "$P/dist/dvfel.ko" "$P/dist/builds/dvfel-$V.ko"
+echo "saved dist/builds/dvfel-$V.ko"
 sha256sum "$P/dist/dvfel.ko"

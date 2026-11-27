@@ -9,10 +9,18 @@ Dolby Vision tone-mapped picture too.
 Everything runs in memory. Nothing on the box's partitions is changed: uninstall the module and
 reboot, and the box is stock again.
 
-**Latest release: 2026.11.20.16**:
-[download `onn-dvfel-magisk-2026.11.20.16.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip)
+**Latest release: 2026.11.26.10** (smooth 24 Hz FEL on Dolby Vision TVs and LLDV, badge for every Dolby Vision video):
+[download `onn-dvfel-magisk-2026.11.26.10.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip)
 · [all releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases) · [install guide](#install)
-· FEL players: [ONN4k-FEL-Players](https://github.com/kushmint/ONN4k-FEL-Players)
+· [changelog](#changelog)
+· FEL players: [ONN4k-FEL-Players v2026.11.26](https://github.com/kushmint/ONN4k-FEL-Players/releases/tag/v2026.11.26)
+(use these together: smooth 24 Hz needs module 2026.11.26.10 **and** players v2026.11.26 or later)
+
+> **Smooth FEL playback.** FEL movies now play at 24 Hz with every frame shown once, with its
+> enhancement layer: no repeated frames, no dropped frames and no green flashes, on Dolby Vision TVs
+> (display-led) and on HDR10 TVs (LLDV). On a Dolby Vision TV, 5 minutes of a UHD Blu-ray FEL remux
+> streamed over the network in Kodi FEL used to lose 45 frames; it now loses none after the first
+> seconds of buffering. See [Tested](#tested).
 
 ![Same frame of the "DV FEL All Layers Test" clip: top, base layer only (stock); bottom, FEL composed by this module. The figure exists only in the enhancement layer.](tests/evidence/woman-composition-off-top-on-bottom.png)
 
@@ -27,6 +35,7 @@ enhancement layer appear.*
 - [What you need](#what-you-need)
 - [Install](#install)
 - [Tested](#tested)
+- [Changelog](#changelog)
 - [Output modes: which one is for you](#output-modes-which-one-is-for-you)
 - [The settings app](#the-settings-app)
 - [Players](#players)
@@ -55,7 +64,7 @@ Check your firmware build: **Settings → System → About → Android TV OS bui
 
 ### 1. Download the zip
 
-**[onn-dvfel-magisk-2026.11.20.16.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip)**
+**[onn-dvfel-magisk-2026.11.26.10.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip)**
 (newer versions: [Releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases)).
 
 It's a standard Magisk module zip (about 85 KB). Don't unzip it; Magisk installs it as is. Inside:
@@ -65,7 +74,7 @@ It's a standard Magisk module zip (about 85 KB). Don't unzip it; Magisk installs
 | `dvfel.ko` | The kernel module that pairs and composes the enhancement layer (built for the onn's exact kernel, CFI-enabled) |
 | `service.sh` | Loads `dvfel.ko` at every boot (after checking the firmware), then applies your settings |
 | `dvfelctl`, `lldv_setup.sh` | The root service behind the settings app (output mode, LLDV, sleep/wake handling) |
-| `system.prop` | One display timing property for smooth 24 Hz FEL playback (see [How it works](#how-it-works)) |
+| `system.prop` | Display timing and video decoder buffer properties for smooth 24 Hz FEL playback (see [How it works](#how-it-works)) |
 | `system/app/DvfelSettings` | The **Dolby Vision FEL** settings app |
 | `customize.sh` | Install-time check: refuses any firmware other than the two supported builds |
 
@@ -94,17 +103,17 @@ On the computer ([platform-tools](https://developer.android.com/tools/releases/p
 
 ```sh
 # download the zip (or use the link above in a browser)
-curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.20.16/onn-dvfel-magisk-2026.11.20.16.zip
+curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip
 
 adb connect <box-ip>:5555        # on the TV: tick "Always allow from this computer", then Allow
-adb push onn-dvfel-magisk-2026.11.20.16.zip /sdcard/Download/
+adb push onn-dvfel-magisk-2026.11.26.10.zip /sdcard/Download/
 ```
 
 Then either install it from the **Magisk** app (**Modules → Install from storage → Downloads**), or
 straight from the command line:
 
 ```sh
-adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.20.16.zip'"
+adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.26.10.zip'"
 adb reboot
 ```
 
@@ -133,7 +142,36 @@ right for almost everyone. Press **Apply** if you change anything; the status pa
 
 ## Tested
 
-Release 2026.11.20.15 (same module code as 2026.11.20.16, which only adds the djnice credit) on both supported firmware builds, with a real P7 FEL movie and the
+**2026.11.26.10** with the players' v2026.11.26 builds, on both boxes. "Lost" is frames the video path never
+showed; "held" is frames that had to wait for their enhancement layer (each one is a frame shown
+twice); "green" is frames shown without their enhancement layer.
+
+**US box → Dolby Vision TV (display-led), Kodi FEL, 24 Hz:**
+
+| Test | Before (decoder margin 12) | **2026.11.26.10** |
+|---|---|---|
+| Full UHD Blu-ray FEL remux over SMB, 150 s, two runs | 176 / 89 held, 45 / 8 lost | **0 / 1 held, 0 / 0 lost, no green** |
+| Same movie over SMB, 5 minutes | | **0 lost after the first 20 s of buffering, no green** |
+| 60 s FEL clip from the box's storage, two runs | 5 lost per minute | **0 held, 0 lost, no green** |
+| VLC FEL, 23.976 Hz | 29 held, 23 lost | **7 held, about 0 lost, no green** |
+
+The previous public release (2026.11.20.16) lost about 0.3 frames per second here (one every 3 s).
+
+**Canada box → AVR → HDR10 TV without Dolby Vision (LLDV), Kodi FEL, 24 Hz:**
+
+| Test | Result |
+|---|---|
+| Full UHD Blu-ray FEL remux over SMB, 5 minutes | **0 lost, 2 held, no green** |
+| 60 s FEL clip, several runs | 0 lost, 0–1 held, no green |
+
+Also checked with 2026.11.26.10: Netflix and YouTube in 4K on both boxes (play normally; they use the AV1/VP9
+decoders, which the buffer change doesn't touch), a profile 8.1 clip and a plain HDR10 clip (play
+the same as before), MEL and UHD Blu-ray ISO playback, the badge for profile 7 FEL, profile 8 and
+HDR10 (no badge), and no kernel faults in any run.
+
+Results of the earlier release, for comparison:
+
+Release 2026.11.20.15 on both supported firmware builds, with a real P7 FEL movie and the
 "DV FEL All Layers Test" clip. "Lost" counts frames the display dropped during 30 s of normal
 playback (seeks excluded).
 
@@ -187,8 +225,11 @@ and applies it within a second or two. Open it from the apps row: **Dolby Vision
 
 ![Settings app with the Advanced HDR10 metadata options shown](docs/app-advanced.png)
 
-**The badge:** with *Show a badge when FEL playback starts* on, this appears for a few seconds when
-a FEL video starts (screenshots can't capture the video plane, so the movie shows as black here):
+**The badge:** with *Show a badge when Dolby Vision playback starts* on, a message like this appears
+for a few seconds when any Dolby Vision video starts, naming its profile (for example
+*Dolby Vision Profile 7 FEL · LLDV 578 nits · sent as HDR10*, *Dolby Vision Profile 8*, or
+*Profile 7 MEL*). A FEL video in a player that can't do FEL says *base layer only*. The screenshot
+below is from an older version (screenshots can't capture the video plane, so the movie shows as black here):
 
 ![FEL badge at the bottom of the screen reading "Dolby Vision FEL · display-led"](docs/badge-display-led.png)
 
@@ -199,7 +240,7 @@ a FEL video starts (screenshots can't capture the video plane, so the movie show
 | **Output mode** | See [Output modes](#output-modes-which-one-is-for-you). |
 | **LLDV brightness target** | Peak brightness the box tone-maps to in LLDV (320–1037 nits). Only used by Automatic (when it picks LLDV) and LLDV. |
 | **LLDV only while a FEL video plays** | *Experimental, leave it off.* Switches LLDV on per video instead of always. FEL does not compose in this mode yet. |
-| **Show a badge when FEL playback starts** | A short on-screen message when a FEL video starts, showing which output is in use. |
+| **Show a badge when Dolby Vision playback starts** | A short on-screen message when a Dolby Vision video starts: its profile (FEL / MEL for profile 7) and the output in use. |
 | **Advanced: HDR10 metadata for LLDV** | What the HDR10 signal tells the TV in LLDV. **A** (default): your brightness target. **B**: the movie's own mastering values. **C**: the movie's values, capped at your target. B and C need a player that passes the movie's values; until then they report the target. |
 | **Apply** | Saves and applies. It turns dark yellow when selected; "Applied." appears when the module confirms. |
 
@@ -223,7 +264,7 @@ A normal player (Netflix, Plex, stock ExoPlayer) only decodes the base layer, so
 player that also decodes the enhancement layer and hands it to this module through `/dev/dvfel`.
 
 Use the onn builds of signde's **VLC FEL** and **Kodi FEL** players from
-**[ONN4k-FEL-Players](https://github.com/kushmint/ONN4k-FEL-Players/releases)** (`VLC-onn.apk`,
+**[ONN4k-FEL-Players](https://github.com/kushmint/ONN4k-FEL-Players/releases)**, v2026.11.26 or later (`VLC-onn.apk`,
 `Kodi-onn.apk`). They install next to the stock VLC and Kodi (`org.videolan.vlc.fel`,
 `org.xbmc.kodi.fel`). Install commands are under [Option B](#option-b-adb-from-a-computer).
 
@@ -236,10 +277,10 @@ The onn changes to the players (S7D board support, the Codec2 enhancement-layer 
 fixes) are being offered upstream to [signde/vlc-fel-android](https://github.com/signde/vlc-fel-android).
 
 The [settings app](#the-settings-app) shows **FEL playing: yes** while a FEL video is composed, and
-with the badge on, a short message appears when FEL playback starts.
+with the badge on, a short message names the Dolby Vision profile when a video starts.
 
-Videos that aren't profile 7 FEL (MEL, profile 5/8, HDR10, SDR) play exactly as they would
-without the module.
+Videos that aren't profile 7 FEL (MEL, profile 5/8, HDR10, SDR) are not changed by the module, except
+that every HEVC video decoder gets the larger buffer margin described under [How it works](#how-it-works).
 
 ## Command line
 
@@ -276,6 +317,17 @@ Log: `/data/adb/onn_dvfel/log.txt`. Driver counters: `/sys/kernel/debug/dvfel/st
    skip a vsync and drop frames (Kodi FEL lost 7–10 per second). 4 ms is the vendor's own normal
    offset and the smallest value that fixes it without costing UI smoothness.
 
+6. It also gives the video decoders more output buffers: `vendor.media.c2.vdec.margin=20`
+   (stock 6) and `debug.dvfp.sc2_buffers=11` (how many enhancement-layer frames the FEL players may
+   keep in flight). With fewer buffers (12 stock, 18 in test builds) the enhancement-layer decoder ran out at
+   every keyframe (about once a second), the enhancement layer arrived late, and the frame had to
+   wait for it: shown twice, and at 24 Hz a dropped frame. With 26 buffers it stays well ahead. The
+   margin applies to every app's HEVC decoder; Netflix and YouTube use AV1/VP9 decoders, which
+   keep their own.
+
+7. When an enhancement layer is late anyway, the frame waits for it (up to 150 ms, 500 ms in the
+   first seconds of a video) instead of going out without it, which would show green.
+
 Each firmware build has its own verified profile of addresses and instruction checks. If anything
 doesn't match, the module refuses to load instead of guessing.
 
@@ -291,6 +343,37 @@ doesn't match, the module refuses to load instead of guessing.
 - **AVRs and HDMI handshakes:** an LLDV switch changes the HDMI format twice. One AVR once kept
   renegotiating HDCP afterwards (no picture). Changing the resolution or refresh rate once fixes it.
 - **"LLDV only while a FEL video plays"** doesn't compose FEL yet; leave it off.
+- **The first seconds of a video streamed over the network** can drop a few frames while the player
+  buffers. A seek costs about 3–4 frames.
+
+## Changelog
+
+### 2026.11.26.10
+- **Smooth 24 Hz FEL on Dolby Vision TVs and LLDV.** Video decoder buffer margin 20 (was the stock 6),
+  so the enhancement layer is never late at keyframes. On a Dolby Vision TV a 150 s network play lost
+  45 frames before and none now.
+- **Lighter hook on the Dolby Vision core's register writes.** The module now hooks only the code
+  paths that write the registers it changes, instead of every one of about 1,450 writes per frame. The
+  display interrupt is about 1.5 ms shorter, which removed most of the dropped frames on Dolby Vision
+  TVs (display-led).
+- **No green frames when an enhancement layer is late:** the frame waits up to 150 ms for it (was 50 ms),
+  and up to 500 ms in the first 6 seconds of a video.
+- **Badge for every Dolby Vision video**, naming the profile and FEL or MEL (for example *Dolby Vision
+  Profile 7 FEL · LLDV 578 nits · sent as HDR10*, *Dolby Vision Profile 8*). FEL in a player that can't
+  do FEL says *base layer only*.
+- **Safer updates:** if a new `dvfel.ko` is refused at boot, the module loads the last version that
+  worked on that box.
+- **Fixed: green or snowy video after a FEL video.** The next non-FEL video (any player, even the home
+  screen preview) could show green snow until a reboot.
+- `/sys/kernel/debug/dvfel/holds`: one line per frame that waited for its enhancement layer (for
+  troubleshooting).
+
+### 2026.11.20.16
+- Credits for djnice; README screenshots and diagram. Same code as 2026.11.20.15.
+
+### 2026.11.20.15
+- First public release: FEL composition, LLDV for HDR10 TVs, the settings app, the SurfaceFlinger
+  timing fix for Kodi FEL at 24 Hz, and the fixes for green video after stopping a FEL video.
 
 ## Building from source
 

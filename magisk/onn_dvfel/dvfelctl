@@ -14,7 +14,7 @@ P=/sys/module/aml_media/parameters
 H=/sys/class/amhdmitx/amhdmitx0
 M=/sys/module/dvfel/parameters
 LS=$MODDIR/lldv_setup.sh
-OFF_DELAY=6
+OFF_DELAY=3
 
 MODE=auto; NITS=499; META=A; BADGE=1; WHEN=always
 load() { [ -f $CONF ] && . $CONF; }
@@ -139,13 +139,16 @@ set_keys() {
   printf 'MODE=%s\nNITS=%s\nMETA=%s\nBADGE=%s\nWHEN=%s\n' "$MODE" "$NITS" "$META" "$BADGE" "$WHEN" > $CONF.tmp && mv $CONF.tmp $CONF
 }
 
+# $1 profile (0 = unknown), $2 FEL|MEL|none, $3 1 = dvfel FEL session (EL composed)
 badge() {
   load
   [ "$BADGE" = 1 ] || return 0
+  case "$1" in 0|'') T="Dolby Vision";; *) T="Dolby Vision Profile $1";; esac
+  case "$2" in FEL|MEL) T="$T $2";; esac
+  [ "$2" = FEL ] && [ "$3" != 1 ] && T="$T  ·  base layer only (not a FEL player)"
   case "$(cat $DATA/active 2>/dev/null)" in
-    lldv) T="Dolby Vision FEL  ·  LLDV $NITS nits  ·  sent as HDR10";;
-    displayled) T="Dolby Vision FEL  ·  display-led";;
-    *) T="FEL video  ·  Dolby Vision processing off (HDR10 base layer)";;
+    lldv) T="$T  ·  LLDV $NITS nits  ·  sent as HDR10";;
+    displayled) T="$T  ·  display-led";;
   esac
   am broadcast -f 32 -a $APP.BADGE -n $APP/.BadgeReceiver --es text "$T" >/dev/null 2>&1
 }
@@ -175,30 +178,67 @@ app_status() {
   mv $APPDIR/status.tmp $APPDIR/status.txt
 }
 
+# The loop must stay almost free: a forked process every second delayed SurfaceFlinger enough to
+# lose a frame about every 10 s in 24 Hz Dolby Vision plays (the DV handler leaves little margin).
+# So the idle path uses only shell builtins (read, case, test) plus one sleep every POLL seconds,
+# and while a FEL session runs it does nothing but wait for the session to end. Anything that
+# forks (status, app_request, apply, badge) runs only when something changed.
+POLL=2
 monitor() {
-  was_asleep=0; was_fel=0; off_count=0
+  was_asleep=0; was_fel=0; off_count=0; last_state=; tick=0
+  mark=$DATA/req_mark
+  DVS=/sys/kernel/debug/dvfel/dvstream
+  dvs_last=; IFS=' ' read -r dvs_last _ < $DVS 2>/dev/null
+  load
   while true; do
-    sleep 1
-    loaded || continue
-    app_request
-    load
-    if asleep; then was_asleep=1; continue; fi
-    if [ $was_asleep = 1 ]; then was_asleep=0; sleep 4; apply; fi
-    if in_session; then fel=1; else fel=0; fi
+    sleep $POLL
+    [ -e $M/lldv_hdr10 ] || continue
+    IFS= read -r mode < /sys/class/display/mode
+    if [ "$mode" = dummy_l ]; then was_asleep=1; continue; fi
+    if [ $was_asleep = 1 ]; then was_asleep=0; sleep 4; load; apply; last_state=; fi
+    IFS= read -r l < /sys/kernel/debug/dvfel/stats 2>/dev/null
+    case "$l" in "fixes session 1"*) fel=1;; *) fel=0;; esac
+    # Every new Dolby Vision stream (any player, any profile) gets the badge.
+    IFS=' ' read -r dvs_seq dvs_prof dvs_el dvs_sess < $DVS 2>/dev/null
+    if [ -n "$dvs_seq" ] && [ "$dvs_seq" != "$dvs_last" ]; then
+      dvs_last=$dvs_seq
+      [ "$dvs_seq" != 0 ] && dvs_badge=1
+    fi
+    # During a FEL play: only look for its end.
+    if [ "$dvs_badge" = 1 ] && { [ $fel = 0 ] || [ $was_fel = 1 ]; }; then
+      dvs_badge=0; badge "$dvs_prof" "$dvs_el" "$dvs_sess"
+    fi
+    if [ $fel = 1 ] && [ $was_fel = 1 ]; then continue; fi
+    if [ -f $APPDIR/request.conf ] && [ $APPDIR/request.conf -nt $mark ]; then
+      app_request; : > $mark; load; last_state=
+    fi
     if [ $fel = 1 ] && [ $was_fel = 0 ]; then
-      off_count=0; session_on; badge
-    elif [ $fel = 0 ] && [ "$WHEN" != always ] && [ "$(cat $DATA/active 2>/dev/null)" != idle ]; then
-      off_count=$((off_count + 1))
-      [ $off_count -ge $OFF_DELAY ] && session_off
+      off_count=0; load; session_on
+      # the stream badge waits for session_on, so it names the output mode
+      [ "$dvs_badge" = 1 ] && { dvs_badge=0; badge "$dvs_prof" "$dvs_el" "$dvs_sess"; }
+    elif [ $fel = 0 ] && [ "$WHEN" != always ]; then
+      IFS= read -r act < $DATA/active 2>/dev/null
+      if [ "$act" != idle ]; then
+        off_count=$((off_count + 1))
+        [ $off_count -ge $OFF_DELAY ] && session_off
+      fi
     fi
     [ $fel = 1 ] && off_count=0
-    if [ "$(cat $DATA/active 2>/dev/null)" = lldv ]; then
+    IFS= read -r act < $DATA/active 2>/dev/null
+    if [ "$act" = lldv ]; then
       # Display mode changes can switch the Dolby Vision engine off or force SDR.
-      [ "$(cat $P/dolby_vision_enable)" = Y ] || { echo Y > $P/dolby_vision_enable; log "monitor: engine back on"; }
-      [ "$(cat $P/dolby_vision_policy)" = 0 ] || { echo 0 > $P/dolby_vision_policy; log "monitor: policy back to 0"; }
+      IFS= read -r v < $P/dolby_vision_enable
+      [ "$v" = Y ] || { echo Y > $P/dolby_vision_enable; log "monitor: engine back on"; }
+      IFS= read -r v < $P/dolby_vision_policy
+      [ "$v" = 0 ] || { echo 0 > $P/dolby_vision_policy; log "monitor: policy back to 0"; }
     fi
     was_fel=$fel
-    app_status
+    tick=$((tick + 1))
+    state="$mode|$fel|$act"
+    if [ "$state" != "$last_state" ] || [ $tick -ge 30 ]; then
+      last_state=$state; tick=0
+      app_status
+    fi
   done
 }
 

@@ -248,6 +248,43 @@ static int peek_pre(struct kprobe *p, struct pt_regs *r)
  return 0;
 }
 
+/*
+ * Green video after a FEL play: the stock driver keeps the EL frame it last displayed in
+ * cur_dispbuf2 (dv_toggle_frame stores amdv_vf_peek_el's result there while our provider is
+ * attached). After our session it stays set, pointing at an EL frame of ours that is gone.
+ * Every later play, FEL or not, programs the VD2 layer from that stale frame whenever its memory
+ * holds old data, and the picture turns to snow (about 40% of the first plays after a FEL
+ * play; clearing the pointer heals a green play at once). Once the session has drained,
+ * nothing of ours is attached any more, so the pointer is set to NULL (BL only).
+ * The address is decoded from dv_toggle_frame (+0x5c adrp x8, +0x60 str x0,[x8]; CA and US).
+ */
+static bool clear_stale_el=true;
+module_param(clear_stale_el,bool,0644);
+MODULE_PARM_DESC(clear_stale_el,"Clear the stock EL frame pointer after a session's drain (fixes green video after FEL)");
+static unsigned long *cur_dispbuf2_p;
+static unsigned long stale_el_cleared;
+static void cur_dispbuf2_resolve(void)
+{
+ unsigned long tf=lookup_name("dv_toggle_frame");u32 ia=0,is=0;
+ cur_dispbuf2_p=NULL;
+ if(tf&&!copy_from_kernel_nofault(&ia,(void *)(tf+0x5c),4)&&!copy_from_kernel_nofault(&is,(void *)(tf+0x60),4)&&
+    (ia&0x9f00001f)==0x90000008&&(is&0xffc003ff)==0xf9000100){
+  long imm=(long)((((ia>>5)&0x7ffff)<<2)|((ia>>29)&3));
+  if(imm&0x100000)imm|=~0x1fffffL;
+  cur_dispbuf2_p=(unsigned long *)(((tf+0x5c)&~0xfffUL)+((unsigned long)imm<<12)+(((is>>10)&0xfff)<<3));
+ }
+ if(!cur_dispbuf2_p)pr_warn("dvfel: dv_toggle_frame layout not recognised, green-after-FEL guard off\n");
+}
+
+/* (process context) The session's drain is over: the display may still hold its last EL frame. */
+static void fixes_clear_idle_el(void)
+{
+ if(!READ_ONCE(clear_stale_el)||!cur_dispbuf2_p||!*cur_dispbuf2_p)return;
+ pr_info("dvfel: stock EL pointer %lx cleared\n",*cur_dispbuf2_p);
+ WRITE_ONCE(*cur_dispbuf2_p,0);
+ stale_el_cleared++;
+}
+
 static int canvas_pre(struct kprobe *p, struct pt_regs *r)
 {
  unsigned long lr=r->regs[30];
@@ -616,6 +653,38 @@ static struct kprobe fix_probes[]={
  {.symbol_name="VSYNC_WR_DV_REG_BITS",.pre_handler=vd2_bits_pre},
 };
 
+#include "regsites.h"
+
+/* TEST: switch the VSYNC_WR_DV_REG hook off/on at runtime, to measure what its ~1,450 hits per vsync cost.
+ * Off breaks FEL composition (composer mode, EL bits), so only for timing. */
+static bool reg_probe_off;
+static DEFINE_MUTEX(reg_probe_lock);
+static int reg_probe_set(const char *val,const struct kernel_param *kp)
+{
+ bool on;int ret=kstrtobool(val,&on);
+ if(ret)return ret;
+ if(rs_active)return -EBUSY;
+ mutex_lock(&reg_probe_lock);
+ if(on&&reg_probe_off){
+  memset(&fix_probes[6],0,sizeof(fix_probes[6]));
+  fix_probes[6].symbol_name="VSYNC_WR_DV_REG";fix_probes[6].pre_handler=reg_pre;
+  ret=register_kprobe(&fix_probes[6]);
+  if(!ret)reg_probe_off=false;
+ }else if(!on&&!reg_probe_off&&fix_probes[6].addr){
+  unregister_kprobe(&fix_probes[6]);reg_probe_off=true;
+ }
+ mutex_unlock(&reg_probe_lock);
+ pr_info("dvfel: VSYNC_WR_DV_REG hook %s (%d)\n",reg_probe_off?"off":"on",ret);
+ return ret;
+}
+static int reg_probe_get(char *buf,const struct kernel_param *kp)
+{
+ return sprintf(buf,"%c\n",reg_probe_off?'N':'Y');
+}
+static const struct kernel_param_ops reg_probe_ops={.set=reg_probe_set,.get=reg_probe_get};
+module_param_cb(reg_probe,&reg_probe_ops,NULL,0644);
+MODULE_PARM_DESC(reg_probe,"TEST: VSYNC_WR_DV_REG hook on (Y) or off (N, breaks FEL; timing only)");
+
 /*
  * LLDV for displays without Dolby Vision: the DV core still tone maps to the forced
  * VSVDB target, and the HDMI signalling is replaced with HDR10 after the stock driver
@@ -742,7 +811,8 @@ static void fixes_exit(void)
  if(bl_detach_probe_active){unregister_kretprobe(&bl_detach_probe);bl_detach_probe_active=false;}
  if(residual_probe_active){unregister_kprobe(&residual_probe);residual_probe_active=false;}
  if(stock_dovi_owner){module_put(stock_dovi_owner);stock_dovi_owner=NULL;}
- while(nfix)unregister_kprobe(&fix_probes[--nfix]);
+ rs_exit();
+ while(nfix){--nfix;if(nfix==6&&reg_probe_off)continue;unregister_kprobe(&fix_probes[nfix]);}
 }
 
 /* kallsyms_lookup_name is not exported on 5.15; a kprobe resolves the name. */
@@ -867,6 +937,10 @@ static int fixes_init(void)
   if(ret){pr_err("dvfel: fix probe %d failed %d\n",i,ret);fixes_exit();return ret;}
   nfix++;
  }
+
+ if(rs_init()==0){unregister_kprobe(&fix_probes[6]);reg_probe_off=true;}
+
+ cur_dispbuf2_resolve();
 
  bl_detach_probe.kp.symbol_name="common_receiver_event_fun";
  bl_detach_probe.entry_handler=bl_detach_entry;bl_detach_probe.handler=bl_detach_ret;

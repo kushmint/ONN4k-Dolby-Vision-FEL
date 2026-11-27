@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
         left.addView(alwaysBox);
 
         badgeBox = new CheckBox(this);
-        badgeBox.setText("Show a badge when FEL playback starts");
+        badgeBox.setText("Show a badge when Dolby Vision playback starts");
         badgeBox.setTextSize(13);
         left.addView(badgeBox);
 

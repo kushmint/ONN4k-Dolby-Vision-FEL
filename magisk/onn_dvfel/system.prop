@@ -10,3 +10,17 @@
 # Measured by the players session on the CA box, 2026-11-20. Kodi FEL (players' patch) only
 # switches to 24 Hz for FEL when this is >= 4000000.
 debug.sf.early_gl_phase_offset_ns=4000000
+
+# EL decoder buffers (24 Hz frame loss). The C2 decoder gets dpb + this margin output buffers
+# (default 6: 12 for the EL). libdvfelplay keeps "kernel + decoder" under sc2_buffers (default 7), so
+# the EL arrived just in time and ~3 frames/s were held for it, each costing a SurfaceFlinger drop.
+# margin 12 (18 buffers) + sc2_buffers 11: holds ~160 -> 1 per 60 s play, 0 lost (A/B 2026-11-25).
+# margin 10 + sc2_buffers 10 was unstable (one stock-like play, green eyes seen): do not use 10.
+# margin 12 still ran the EL decoder out of output buffers at every keyframe (~1/s; EL in->out 320-425 ms):
+# .111 (display-led) SMB full Grinch 150 s lost 45/8. margin 20 (26 buffers): 0-1 holds, 0 lost on .111 SMB,
+# .141 local and VLC .111 (players session, 2026-11-26); 16 still held, 18 was the first clean one.
+# sc2_buffers stays 11: 16 (with ahead 16) sent frames without their EL (green).
+# The margin is read by the C2 HAL for every decoder it creates (all apps). MemAvailable during FEL
+# 1.04 GB vs 1.12 GB at 12.
+vendor.media.c2.vdec.margin=20
+debug.dvfp.sc2_buffers=11

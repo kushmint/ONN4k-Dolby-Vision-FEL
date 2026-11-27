@@ -22,8 +22,16 @@ mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug
 if ! grep -q '^dvfel ' /proc/modules; then
   if insmod $MODDIR/dvfel.ko open_driver_fixed=1 fel_composer_mode=1; then
     log "dvfel loaded ($FW)"
+    # this build works on this box: keep it as the fallback
+    cmp -s $MODDIR/dvfel.ko $MODDIR/dvfel-good.ko || cp $MODDIR/dvfel.ko $MODDIR/dvfel-good.ko
   else
-    log "dvfel refused to load ($FW), see dmesg"; exit 0
+    log "dvfel refused to load ($FW): $(dmesg | grep -i -E 'dvfel|disagrees|unknown symbol' | tail -3 | tr '\n' ' ')"
+    # a test build that does not load: fall back to the last build that did
+    if [ -f $MODDIR/dvfel-good.ko ] && insmod $MODDIR/dvfel-good.ko open_driver_fixed=1 fel_composer_mode=1; then
+      log "dvfel loaded the fallback dvfel-good.ko ($(cat /sys/module/dvfel/version 2>/dev/null))"
+    else
+      exit 0
+    fi
   fi
 fi
 i=0

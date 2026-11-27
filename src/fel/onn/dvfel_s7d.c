@@ -73,11 +73,20 @@ module_param(open_driver_fixed, bool, 0444);
 MODULE_PARM_DESC(open_driver_fixed, "Experimental: requires separately verified open-driver FEL fixes");
 
 static unsigned int seek_wait_ms;
+static unsigned int startup_wait_ms = 500;
+module_param(startup_wait_ms, uint, 0644);
+MODULE_PARM_DESC(startup_wait_ms, "In the first 6 s after a play's first frame, a BL frame waits this long for its EL (ms, 0 = off, max 1000): the EL decoder starts slowly and the display is switching refresh rate then anyway");
+static unsigned int wait_timeout_ms = 150;
+module_param(wait_timeout_ms, uint, 0644);
+MODULE_PARM_DESC(wait_timeout_ms, "How long a BL frame waits for a late EL outside seeks (ms, 20-500); after it the frame goes out without its EL");
 module_param(seek_wait_ms,uint,0644);
 MODULE_PARM_DESC(seek_wait_ms,"Bounded EL wait after flush, 0 uses normal 50ms; max250ms");
 static bool wait_el;
 module_param(wait_el, bool, 0644);
 MODULE_PARM_DESC(wait_el, "Bounded EL wait experiment; default off");
+static bool wait_seek_only;
+module_param(wait_seek_only, bool, 0644);
+MODULE_PARM_DESC(wait_seek_only, "Hold a BL frame for a late EL only just after a seek; otherwise show it at once (the display keeps the previous EL)");
 
 static int debug;
 module_param(debug, int, 0644);
@@ -102,6 +111,7 @@ struct el_ent {
 	u32 id;
 	s64 pts_us;
 	unsigned long out_jiffies;
+	ktime_t t_q;
 	u64 sess;	/* session that sent it to the display */
 };
 
@@ -156,7 +166,21 @@ static struct dvfel_sc2 {
 	unsigned long wait_until;
 	bool wait_expired;
 	u64 wait_checks, wait_timeouts, wait_ready, wait_repairs;
+	/* ELs that came after their frame's wait had expired (the frame went out without them) */
+	s64 exp_pts[8]; ktime_t exp_t[8]; unsigned int exp_head;
+	u64 late_after_expiry; u32 late_ms[16]; unsigned int late_n;
+	ktime_t wait_t0;
+	u64 wait_skipped;
+	bool sess_hinted;
+	bool wait_hist_done;
+	u64 lat_hist[10];	/* EL queued minus BL first seen, ms buckets */
+	/* one entry per held BL frame (debugfs holds), reset per session */
+	struct { s64 t_ms, pts; u16 vsyncs, wait_ms; u8 out; } hev[256];
+	unsigned int hev_head; int hev_cur;
 	unsigned long seek_wait_until;
+	unsigned long start_wait_until;	/* set at the session's first frame */
+	bool sess_framed;
+	u64 start_extended;
 	u64 seek_wait_extended;
 
 	u64 el_in, el_out, el_put, el_dropped, el_flushed, bl_paired, bl_no_el, bl_no_crc, bl_no_hint;
@@ -496,32 +520,80 @@ static int wait_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 	if (!have)
 		goto out;
 	if (g.wait_vf != vf || g.wait_crc != crc || g.wait_native != get_unaligned((u64 *)((u8 *)vf + fw->vf_pts_off))) {
-		unsigned int timeout=50;
+		unsigned int timeout=clamp_t(unsigned int,READ_ONCE(wait_timeout_ms),20,500);
 		g.wait_vf = vf;
 		g.wait_native=get_unaligned((u64 *)((u8 *)vf + fw->vf_pts_off));
 		g.wait_crc = crc;
+		if (!g.sess_framed) {
+			g.sess_framed = true;
+			g.start_wait_until = jiffies + msecs_to_jiffies(6000);
+		}
 		if (seek_wait_ms && time_before(jiffies,g.seek_wait_until)) {
-			timeout=clamp_t(unsigned int,seek_wait_ms,50,250);
+			timeout=max(timeout,clamp_t(unsigned int,seek_wait_ms,50,250));
 			g.seek_wait_extended++;
+		}
+		if (READ_ONCE(startup_wait_ms) && time_before(jiffies, g.start_wait_until)) {
+			timeout = max(timeout, min_t(unsigned int, READ_ONCE(startup_wait_ms), 1000));
+			g.start_extended++;
 		}
 		g.wait_until = jiffies + msecs_to_jiffies(timeout);
 		g.wait_expired = false;
+		g.wait_t0 = ktime_get();
+		g.wait_hist_done = false;
+		g.hev_cur = -1;
 	}
 	while (g.nq && g.q[0]->pts_us < pts) {
 		g.el_dropped++;
 		ent_release_locked(q_remove(0));
 	}
 	if (g.nq && g.q[0]->pts_us >= pts) {
-		if (g.q[0]->pts_us == pts)
+		if (g.q[0]->pts_us == pts) {
 			g.wait_ready++;
+			if (g.hev_cur >= 0) {
+				g.hev[g.hev_cur].wait_ms = min_t(s64, 65535, ktime_to_ms(ktime_sub(ktime_get(), g.wait_t0)));
+				g.hev[g.hev_cur].out = 1;
+				g.hev_cur = -1;
+			}
+			if (!g.wait_hist_done) {
+				static const s64 lim[9] = { -100, -50, -20, 0, 20, 40, 80, 160, 1000 };
+				s64 d = ktime_to_ms(ktime_sub(g.q[0]->t_q, g.wait_t0));
+				int b = 0;
+				while (b < 9 && d >= lim[b]) b++;
+				g.lat_hist[b]++;
+				g.wait_hist_done = true;
+			}
+		}
 		goto out;
 	}
 	if (time_before(jiffies, g.wait_until)) {
+		if (READ_ONCE(wait_seek_only) && !time_before(jiffies, g.seek_wait_until)) {
+			g.wait_skipped++;
+			goto out;
+		}
 		g.wait_checks++;
+		if (g.hev_cur < 0) {
+			g.hev_cur = g.hev_head++ % 256;
+			g.hev[g.hev_cur].t_ms = ktime_to_ms(g.wait_t0);
+			g.hev[g.hev_cur].pts = pts;
+			g.hev[g.hev_cur].vsyncs = 0;
+			g.hev[g.hev_cur].wait_ms = 0;
+			g.hev[g.hev_cur].out = 0;
+		}
+		if (g.hev[g.hev_cur].vsyncs < 65535)
+			g.hev[g.hev_cur].vsyncs++;
 		regs->regs[0] = 1;
 	} else if (!g.wait_expired) {
 		g.wait_expired = true;
+		if (!g.wait_hist_done) { g.lat_hist[9]++; g.wait_hist_done = true; }
 		g.wait_timeouts++;
+		if (g.hev_cur >= 0) {
+			g.hev[g.hev_cur].wait_ms = min_t(s64, 65535, ktime_to_ms(ktime_sub(ktime_get(), g.wait_t0)));
+			g.hev[g.hev_cur].out = 2;
+			g.hev_cur = -1;
+		}
+		g.exp_pts[g.exp_head % 8] = pts;
+		g.exp_t[g.exp_head % 8] = g.wait_t0;
+		g.exp_head++;
 		if (g.wait_timeouts <= 16) {
 			int held=0,j;
 			for(j=0;j<MAX_EL;j++) held+=g.ent[j].state==EL_OUT;
@@ -572,11 +644,15 @@ static bool clear_stale_dual(struct vframe_s *vf)
 	return hit;
 }
 
+#include "dvstream.h"
+
 /* ri->data: 1 = paired in this session (report dual), 2 = stale flag cleared (report single) */
 static int dual_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 	struct vframe_s *vf = (struct vframe_s *)regs->regs[0];
 	int r = 0;
+
+	dvs_observe(vf);
 
 	if (pair_bl(vf))
 		r = 1;
@@ -601,6 +677,7 @@ static int dual_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 
 static int parse_pre(struct kprobe *p, struct pt_regs *regs)
 {
+	dvs_observe((struct vframe_s *)regs->regs[0]);
 	pair_bl((struct vframe_s *)regs->regs[0]);
 	return 0;
 }
@@ -718,6 +795,10 @@ static long ioc_bl_hint(struct file *f, void __user *arg)
 		return -EINVAL;
 	spin_lock_irqsave(&g.lock, flags);
 	g.hints_in++;
+	if (!g.sess_hinted) {	/* first frame of a play: hold for the EL like after a seek */
+		g.sess_hinted = true;
+		g.seek_wait_until = jiffies + msecs_to_jiffies(4000);
+	}
 	if (g.nh == MAX_HINTS) {
 		memmove(&g.hint[0], &g.hint[1], (MAX_HINTS - 1) * sizeof(g.hint[0]));
 		g.nh--;
@@ -772,6 +853,7 @@ static void orphan_work_fn(struct work_struct *work)
 	if(g.prov_reg){vf_unreg_provider(&g.prov);g.prov_reg=false;}
 	flush_work(&g.rel_work);
 	WRITE_ONCE(g.closing,false);
+	fixes_clear_idle_el();
 	pr_info("dvfel: drain complete, provider detached (bl_detached=%d)\n",READ_ONCE(g.bl_detached));
 	mutex_unlock(&g.sess_lock);
 	module_put(THIS_MODULE);
@@ -854,6 +936,11 @@ static long sess_start(struct file *f)
 		spin_lock_irqsave(&g.lock, flags);
 		g.done_head = g.done_tail = 0;
 		g.sess_puts = 0;
+		memset(g.lat_hist, 0, sizeof(g.lat_hist));
+		g.exp_head = 0; g.late_n = 0; g.late_after_expiry = 0;
+		g.hev_head = 0; g.hev_cur = -1;
+		g.sess_hinted = false;
+		g.sess_framed = false;
 		spin_unlock_irqrestore(&g.lock, flags);
 		WRITE_ONCE(g.session_id, g.session_id + 1);
 	}
@@ -950,6 +1037,7 @@ static long ioc_el_queue(struct file *f, void __user *arg)
 	}
 	if (e) {
 		e->state = EL_QUEUED;
+		e->t_q = ktime_get();
 		e->bl_vf=NULL; e->bl_native=0; e->bl_crc=0;
 		e->db = db;
 		e->vf = vf;
@@ -964,6 +1052,21 @@ static long ioc_el_queue(struct file *f, void __user *arg)
 		g.q[i] = e;
 		g.nq++;
 		g.el_in++;
+		{
+			unsigned int k;
+			for (k = 0; k < 8; k++)
+				if (g.exp_head > k && g.exp_pts[k] == r.pts_us) {
+					u32 ms = (u32)ktime_to_ms(ktime_sub(e->t_q, g.exp_t[k]));
+					if (g.late_n < 16)
+						g.late_ms[g.late_n] = ms;
+					g.late_n++;
+					g.late_after_expiry++;
+					g.exp_pts[k] = -1;
+					pr_info("dvfel: EL pts=%lld came %u ms after its frame was first seen (wait had expired)\n",
+						r.pts_us, ms);
+					break;
+				}
+		}
 		r.id = e->id;
 		r.queued = g.nq;
 	}
@@ -1110,15 +1213,16 @@ static int stats_show(struct seq_file *m, void *v)
 		out += g.ent[i].state == EL_OUT;
 	seq_printf(m,"fixes session %d composer %d receiver %lu peek %lu canvas %lu register %lu\n",
 		   fix_session,composer,fixed_receiver,fixed_peek,fixed_canvas,fixed_register);
-	seq_printf(m,"draining %d checks %u abandoned %lu vd2_writes %lu vd2_changed %d\n",
-		   g.closing,g.drain_checks,g.drain_abandoned,vd2_route_writes,vd2_changed);
+	rs_show(m);
+	seq_printf(m,"draining %d checks %u abandoned %lu vd2_writes %lu vd2_changed %d stale_el_cleared %lu guard %d\n",
+		   g.closing,g.drain_checks,g.drain_abandoned,vd2_route_writes,vd2_changed,stale_el_cleared,cur_dispbuf2_p!=NULL);
 	seq_printf(m,"restore pending %d vsync %lu skipped %lu libregs %lu now %d overflow %lu\n",
 		   restore_pending,restore_vsync,restore_skipped,restore_libregs,lib_nregs,lib_overflow);
 	seq_printf(m,"outside session: dual reported %lu, stale dual cleared %lu\n",nosess_dual,nosess_cleared);
 	seq_printf(m,"bl_detached %d retired %llu\n",g.bl_detached,g.el_retired);
 	seq_printf(m,"adopts %llu stale_adopted %llu stale_reclaimed %llu sess_puts %llu\n",
 		   g.adopts,g.stale_adopted,g.stale_reclaimed,g.sess_puts);
-	seq_printf(m,"seek_wait_ms %u extended %llu\n",seek_wait_ms,g.seek_wait_extended);
+	seq_printf(m,"seek_wait_ms %u extended %llu startup_wait_ms %u extended %llu\n",seek_wait_ms,g.seek_wait_extended,startup_wait_ms,g.start_extended);
 	seq_printf(m,"coherent_bl_fallback %d writes %lu\n",coherent_bl_fallback,fallback_mode_writes);
 	seq_printf(m,"fallback_precommit %d writes %lu\n",fallback_precommit,fallback_precommit_writes);
 	seq_printf(m,"tracked_mode %d skipped %lu native_writes %lu geometry_clears %lu\n",
@@ -1134,6 +1238,17 @@ static int stats_show(struct seq_file *m, void *v)
 	seq_printf(m, "el in %llu out %llu put %llu dropped %llu flushed %llu queued %d on_display %d\n",
 		   g.el_in, g.el_out, g.el_put, g.el_dropped, g.el_flushed, g.nq, out);
 	seq_printf(m, "owned_pair_rechecks %llu\n",g.bl_reused);
+	seq_printf(m, "el_margin_ms (EL queued minus BL first seen; <0 EL early) <-100 %llu <-50 %llu <-20 %llu <0 %llu <20 %llu <40 %llu <80 %llu <160 %llu >=160 %llu never %llu\n",
+		   g.lat_hist[0], g.lat_hist[1], g.lat_hist[2], g.lat_hist[3], g.lat_hist[4],
+		   g.lat_hist[5], g.lat_hist[6], g.lat_hist[7], g.lat_hist[8], g.lat_hist[9]);
+	seq_printf(m, "wait_skipped %llu\n", g.wait_skipped);
+	{
+		int k;
+		seq_printf(m, "wait_timeout_ms %u late_after_expiry %llu ms:", wait_timeout_ms, g.late_after_expiry);
+		for (k = 0; k < min_t(int, g.late_n, 16); k++)
+			seq_printf(m, " %u", g.late_ms[k]);
+		seq_puts(m, "\n");
+	}
 	seq_printf(m, "wait checks %llu ready %llu timeouts %llu repairs %llu\n",
 		   g.wait_checks, g.wait_ready, g.wait_timeouts, g.wait_repairs);
 	seq_printf(m, "bl paired %llu no_el %llu no_hint %llu no_crc %llu\n",
@@ -1144,6 +1259,27 @@ static int stats_show(struct seq_file *m, void *v)
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(stats);
+
+/* held BL frames of this session, oldest first: start (ktime ms), pts, vsyncs held, wait, outcome */
+static int holds_show(struct seq_file *m, void *v)
+{
+	unsigned long flags;
+	unsigned int i, n, first;
+	static const char *const out[] = { "held", "ready", "timeout" };
+
+	spin_lock_irqsave(&g.lock, flags);
+	n = min(g.hev_head, 256u);
+	first = g.hev_head - n;
+	seq_printf(m, "# t_ms pts_us vsyncs wait_ms outcome (%u held frames this session)\n", g.hev_head);
+	for (i = 0; i < n; i++) {
+		unsigned int k = (first + i) % 256;
+		seq_printf(m, "%lld %lld %u %u %s\n", g.hev[k].t_ms, g.hev[k].pts, g.hev[k].vsyncs,
+			   g.hev[k].wait_ms, out[g.hev[k].out]);
+	}
+	spin_unlock_irqrestore(&g.lock, flags);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(holds);
 DEFINE_SHOW_ATTRIBUTE(regs);
 
 static int __init dvfel_init(void)
@@ -1223,6 +1359,8 @@ static int __init dvfel_init(void)
 	debugfs_create_file("stats", 0444, dbg_dir, NULL, &stats_fops);
 	debugfs_create_file("regs", 0444, dbg_dir, NULL, &regs_fops);
 	debugfs_create_file("timing", 0644, dbg_dir, NULL, &timing_fops);
+	debugfs_create_file("dvstream", 0444, dbg_dir, NULL, &dvs_fops);
+	debugfs_create_file("holds", 0444, dbg_dir, NULL, &holds_fops);
 
 	pr_info(DRV_NAME ": S7D %s loaded (src_fmt %d)\n", DVFEL_SC2_VERSION, src_fmt_off);
 	return 0;
