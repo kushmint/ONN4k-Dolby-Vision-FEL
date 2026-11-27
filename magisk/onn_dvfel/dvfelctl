@@ -2,9 +2,9 @@
 # Control script for the onn 4K Pro Dolby Vision FEL module. Runs as root.
 # Usage: dvfelctl get | set KEY=VALUE... | apply | status | monitor
 #
-# The chosen output is "desired". With WHEN=always (default) LLDV stays on; with
-# WHEN=playback it is switched on per FEL session, but FEL then fails to compose
-# (the video path is set up at video start while the engine is still off).
+# The chosen output is "desired"; LLDV stays on while it is the output. WHEN=playback
+# (LLDV per FEL session) was removed in 2026.11.26.11: FEL never composed with it (the video
+# path is set up at video start while the engine is still off). Old settings read as always.
 MODDIR=/data/adb/modules/onn_dvfel
 DATA=/data/adb/onn_dvfel
 CONF=$DATA/settings.conf
@@ -17,7 +17,7 @@ LS=$MODDIR/lldv_setup.sh
 OFF_DELAY=3
 
 MODE=auto; NITS=499; META=A; BADGE=1; WHEN=always
-load() { [ -f $CONF ] && . $CONF; }
+load() { [ -f $CONF ] && . $CONF; WHEN=always; }
 log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
 
 asleep() { [ "$(cat /sys/class/display/mode)" = dummy_l ]; }
@@ -131,7 +131,7 @@ set_keys() {
       NITS=320|NITS=372|NITS=499|NITS=578|NITS=775|NITS=1037) NITS=$v;;
       META=A|META=B|META=C) META=$v;;
       BADGE=0|BADGE=1) BADGE=$v;;
-      WHEN=playback|WHEN=always) WHEN=$v;;
+      WHEN=playback|WHEN=always) WHEN=always;;
       *) echo "invalid $kv"; return 2;;
     esac
   done

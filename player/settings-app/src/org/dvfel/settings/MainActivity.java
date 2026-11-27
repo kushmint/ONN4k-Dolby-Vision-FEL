@@ -41,7 +41,7 @@ public class MainActivity extends Activity {
     RadioGroup modeGroup, metaGroup;
     SeekBar nitsBar;
     TextView nitsValue, statusView, messageView;
-    CheckBox badgeBox, advancedBox, alwaysBox;
+    CheckBox badgeBox, advancedBox;
     LinearLayout advanced;
     Button applyButton;
     boolean loaded;
@@ -88,11 +88,6 @@ public class MainActivity extends Activity {
         nitsValue = text("", 16, true);
         nitsValue.setGravity(Gravity.CENTER_HORIZONTAL);
         left.addView(nitsValue);
-
-        alwaysBox = new CheckBox(this);
-        alwaysBox.setText("LLDV only while a FEL video plays (experimental: FEL does not show yet)");
-        alwaysBox.setTextSize(13);
-        left.addView(alwaysBox);
 
         badgeBox = new CheckBox(this);
         badgeBox.setText("Show a badge when Dolby Vision playback starts");
@@ -180,7 +175,7 @@ public class MainActivity extends Activity {
         pendingReq = System.currentTimeMillis();
         String req = "MODE=" + MODES[mode] + "\nNITS=" + NITS[nitsBar.getProgress()] + "\nMETA=" + META[meta]
             + "\nBADGE=" + (badgeBox.isChecked() ? 1 : 0)
-            + "\nWHEN=" + (alwaysBox.isChecked() ? "playback" : "always") + "\nREQ=" + pendingReq + "\n";
+ + "\nWHEN=always\nREQ=" + pendingReq + "\n";
         try {
             File tmp = new File(getFilesDir(), "request.tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(req.getBytes(StandardCharsets.UTF_8)); }
@@ -214,7 +209,6 @@ public class MainActivity extends Activity {
             for (int i = 0; i < NITS.length; i++) if (String.valueOf(NITS[i]).equals(s.get("NITS"))) nitsBar.setProgress(i);
             nitsValue.setText(NITS[nitsBar.getProgress()] + " nits");
             badgeBox.setChecked(!"0".equals(s.get("BADGE")));
-            alwaysBox.setChecked("playback".equals(s.get("WHEN")));
             updateEnabled();
             messageView.setText("");
         }
@@ -295,7 +289,6 @@ public class MainActivity extends Activity {
         boolean lldv = mode == 0 || mode == 2;
         nitsBar.setEnabled(lldv);
         nitsValue.setAlpha(lldv ? 1f : 0.4f);
-        alwaysBox.setEnabled(lldv);
     }
 
     static String yes(String v) { return "1".equals(v) ? "yes" : "no"; }

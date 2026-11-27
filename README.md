@@ -9,12 +9,12 @@ Dolby Vision tone-mapped picture too.
 Everything runs in memory. Nothing on the box's partitions is changed: uninstall the module and
 reboot, and the box is stock again.
 
-**Latest release: 2026.11.26.10** (smooth 24 Hz FEL on Dolby Vision TVs and LLDV, badge for every Dolby Vision video):
-[download `onn-dvfel-magisk-2026.11.26.10.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip)
+**Latest release: 2026.11.26.11** (smooth 24 Hz FEL on Dolby Vision TVs and LLDV, badge for every Dolby Vision video):
+[download `onn-dvfel-magisk-2026.11.26.11.zip`](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.11/onn-dvfel-magisk-2026.11.26.11.zip)
 · [all releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases) · [install guide](#install)
 · [changelog](#changelog)
 · FEL players: [ONN4k-FEL-Players v2026.11.26](https://github.com/kushmint/ONN4k-FEL-Players/releases/tag/v2026.11.26)
-(use these together: smooth 24 Hz needs module 2026.11.26.10 **and** players v2026.11.26 or later)
+(use these together: smooth 24 Hz needs module 2026.11.26.10 or later **and** players v2026.11.26 or later)
 
 > **Smooth FEL playback.** FEL movies now play at 24 Hz with every frame shown once, with its
 > enhancement layer: no repeated frames, no dropped frames and no green flashes, on Dolby Vision TVs
@@ -64,7 +64,7 @@ Check your firmware build: **Settings → System → About → Android TV OS bui
 
 ### 1. Download the zip
 
-**[onn-dvfel-magisk-2026.11.26.10.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip)**
+**[onn-dvfel-magisk-2026.11.26.11.zip](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.11/onn-dvfel-magisk-2026.11.26.11.zip)**
 (newer versions: [Releases](https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases)).
 
 It's a standard Magisk module zip (about 85 KB). Don't unzip it; Magisk installs it as is. Inside:
@@ -103,17 +103,17 @@ On the computer ([platform-tools](https://developer.android.com/tools/releases/p
 
 ```sh
 # download the zip (or use the link above in a browser)
-curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.10/onn-dvfel-magisk-2026.11.26.10.zip
+curl -LO https://github.com/kushmint/ONN4k-Dolby-Vision-FEL/releases/download/v2026.11.26.11/onn-dvfel-magisk-2026.11.26.11.zip
 
 adb connect <box-ip>:5555        # on the TV: tick "Always allow from this computer", then Allow
-adb push onn-dvfel-magisk-2026.11.26.10.zip /sdcard/Download/
+adb push onn-dvfel-magisk-2026.11.26.11.zip /sdcard/Download/
 ```
 
 Then either install it from the **Magisk** app (**Modules → Install from storage → Downloads**), or
 straight from the command line:
 
 ```sh
-adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.26.10.zip'"
+adb shell "su -c 'magisk --install-module /sdcard/Download/onn-dvfel-magisk-2026.11.26.11.zip'"
 adb reboot
 ```
 
@@ -142,7 +142,7 @@ right for almost everyone. Press **Apply** if you change anything; the status pa
 
 ## Tested
 
-**2026.11.26.10** with the players' v2026.11.26 builds, on both boxes. "Lost" is frames the video path never
+**2026.11.26.10** (the same kernel module as 2026.11.26.11) with the players' v2026.11.26 builds, on both boxes. "Lost" is frames the video path never
 showed; "held" is frames that had to wait for their enhancement layer (each one is a frame shown
 twice); "green" is frames shown without their enhancement layer.
 
@@ -217,9 +217,9 @@ and applies it within a second or two. Open it from the apps row: **Dolby Vision
 
 ![Settings app on a Dolby Vision TV: Automatic selected, status shows Display DV yes, HDMI 2160p60hz 444 8bit, DV Engine BYPASS](docs/app-displayled-idle.png)
 
-**On an HDR10 TV without Dolby Vision** (LLDV at 578 nits: the whole box runs as HDR10 4:2:2 12-bit):
+**On an HDR10 TV without Dolby Vision** (Automatic → LLDV at 578 nits: the whole box runs as HDR10 4:2:2 12-bit):
 
-![Settings app on an HDR10 TV: LLDV selected at 578 nits, status shows Current Mode LLDV, HDMI 2160p60hz 422 12bit, Signal HDR10, DV Engine IPT_TUNNEL](docs/app-lldv.png)
+![Settings app on an HDR10 TV: Automatic selected, LLDV at 578 nits, status shows Current Mode LLDV, HDMI 2160p60hz 422 12bit, Signal HDR10, DV Engine IPT_TUNNEL](docs/app-lldv.png)
 
 **Advanced: HDR10 metadata for LLDV** opened (choices A, B and C below the checkbox):
 
@@ -229,7 +229,7 @@ and applies it within a second or two. Open it from the apps row: **Dolby Vision
 for a few seconds when any Dolby Vision video starts, naming its profile (for example
 *Dolby Vision Profile 7 FEL · LLDV 578 nits · sent as HDR10*, *Dolby Vision Profile 8*, or
 *Profile 7 MEL*). A FEL video in a player that can't do FEL says *base layer only*. The screenshot
-below is from an older version (screenshots can't capture the video plane, so the movie shows as black here):
+below is from an older version and shows the old wording (screenshots can't capture the video plane, so the movie shows as black here):
 
 ![FEL badge at the bottom of the screen reading "Dolby Vision FEL · display-led"](docs/badge-display-led.png)
 
@@ -239,7 +239,6 @@ below is from an older version (screenshots can't capture the video plane, so th
 |---|---|
 | **Output mode** | See [Output modes](#output-modes-which-one-is-for-you). |
 | **LLDV brightness target** | Peak brightness the box tone-maps to in LLDV (320–1037 nits). Only used by Automatic (when it picks LLDV) and LLDV. |
-| **LLDV only while a FEL video plays** | *Experimental, leave it off.* Switches LLDV on per video instead of always. FEL does not compose in this mode yet. |
 | **Show a badge when Dolby Vision playback starts** | A short on-screen message when a Dolby Vision video starts: its profile (FEL / MEL for profile 7) and the output in use. |
 | **Advanced: HDR10 metadata for LLDV** | What the HDR10 signal tells the TV in LLDV. **A** (default): your brightness target. **B**: the movie's own mastering values. **C**: the movie's values, capped at your target. B and C need a player that passes the movie's values; until then they report the target. |
 | **Apply** | Saves and applies. It turns dark yellow when selected; "Applied." appears when the module confirms. |
@@ -293,7 +292,7 @@ su -c sh /data/adb/modules/onn_dvfel/dvfelctl apply
 ```
 
 Settings (`/data/adb/onn_dvfel/settings.conf`): `MODE=auto|displayled|lldv|off`,
-`NITS=320|372|499|578|775|1037`, `META=A|B|C`, `BADGE=0|1`, `WHEN=always|playback`.
+`NITS=320|372|499|578|775|1037`, `META=A|B|C`, `BADGE=0|1`.
 Log: `/data/adb/onn_dvfel/log.txt`. Driver counters: `/sys/kernel/debug/dvfel/stats`
 (`composer 0` = FEL composing, `bl paired` = frames with their enhancement layer).
 
@@ -342,11 +341,16 @@ doesn't match, the module refuses to load instead of guessing.
   dying app rather than this module. Stopping a video normally is not affected.
 - **AVRs and HDMI handshakes:** an LLDV switch changes the HDMI format twice. One AVR once kept
   renegotiating HDCP afterwards (no picture). Changing the resolution or refresh rate once fixes it.
-- **"LLDV only while a FEL video plays"** doesn't compose FEL yet; leave it off.
 - **The first seconds of a video streamed over the network** can drop a few frames while the player
   buffers. A seek costs about 3–4 frames.
 
 ## Changelog
+
+### 2026.11.26.11
+- Settings app: removed the experimental *LLDV only while a FEL video plays* option (FEL never
+  composed with it). Anyone who had it on is moved to the normal behaviour (LLDV stays on). New app
+  screenshots. The kernel module is unchanged from 2026.11.26.10 (the app's status still shows
+  `2026.11.26.10`).
 
 ### 2026.11.26.10
 - **Smooth 24 Hz FEL on Dolby Vision TVs and LLDV.** Video decoder buffer margin 20 (was the stock 6),
